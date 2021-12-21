@@ -2,13 +2,8 @@
 #define WIDGET_H
 
 #include <QWidget>
-
-QT_BEGIN_NAMESPACE
-namespace Ui
-{
-    class Widget;
-}
-QT_END_NAMESPACE
+#include <QTextEdit>
+#include <QTextBrowser>
 
 class Widget : public QWidget
 {
@@ -19,6 +14,12 @@ public:
     ~Widget();
 
 private:
-    Ui::Widget* ui;
+    QTextEdit* textEdit;
+    QTextBrowser* textBrowser;
+
+private slots:
+    void openFile();
+    void saveFile();
+    void genTree();
 };
 #endif // WIDGET_H

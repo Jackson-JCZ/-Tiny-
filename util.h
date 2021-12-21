@@ -5,6 +5,8 @@
 /* Kenneth C. Louden                                */
 /****************************************************/
 #include "globals.h"
+#include <string>
+using namespace std;
 
 #ifndef _UTIL_H_
 #define _UTIL_H_
@@ -12,7 +14,7 @@
 /* Procedure printToken prints a token
  * and its lexeme to the listing file
  */
-void printToken(TokenType, const char*);
+string printToken(TokenType, string);
 
 /* Function newStmtNode creates a new statement
  * node for syntax tree construction
@@ -32,6 +34,6 @@ char* copyString(char*);
 /* procedure printTree prints a syntax tree to the
  * listing file using indentation to indicate subtrees
  */
-void printTree(TreeNode*);
+string printTree(TreeNode*, string, int);
 
 #endif

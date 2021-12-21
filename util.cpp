@@ -6,14 +6,14 @@
 /* Kenneth C. Louden                                */
 /****************************************************/
 
-#include "globals.h"
 #include "util.h"
 
 /* Procedure printToken prints a token
  * and its lexeme to the listing file
  */
-void printToken(TokenType token, const char* tokenString)
+string printToken(TokenType token, string tokenString)
 {
+    string s = "";
     switch(token) {
         case IF:
         case THEN:
@@ -23,57 +23,91 @@ void printToken(TokenType token, const char* tokenString)
         case UNTIL:
         case READ:
         case WRITE:
-            fprintf(listing,
-                    "reserved word: %s\n", tokenString);
+        case WHILE:
+        case DO:
+        case FOR:
+        case ENDDO:
+        case TO:
+        case DOWNTO:
+        case AND:
+        case OR:
+        case NOT:
+            s += "reserved word: " + tokenString;
             break;
         case ASSIGN:
-            fprintf(listing, ":=\n");
+            s += '=';
             break;
         case LT:
-            fprintf(listing, "<\n");
+            s += '<';
+            break;
+        case LTE:
+            s += "<=";
+            break;
+        case GT:
+            s += '>';
+            break;
+        case GTE:
+            s += ">=";
             break;
         case EQ:
-            fprintf(listing, "=\n");
+            s += "==";
+            break;
+        case NE:
+            s += "<>";
             break;
         case LPAREN:
-            fprintf(listing, "(\n");
+            s += '(';
             break;
         case RPAREN:
-            fprintf(listing, ")\n");
+            s += ')';
             break;
         case SEMI:
-            fprintf(listing, ";\n");
+            s += ';';
             break;
         case PLUS:
-            fprintf(listing, "+\n");
+            s += '+';
             break;
         case MINUS:
-            fprintf(listing, "-\n");
+            s += '-';
             break;
         case TIMES:
-            fprintf(listing, "*\n");
+            s += '*';
+            break;
+        case MOD:
+            s += '%';
+            break;
+        case POWER:
+            s += '^';
+            break;
+        case LINK:
+            s += '&';
+            break;
+        case LOR:
+            s += '|';
+            break;
+        case CLOSURE:
+            s += '#';
             break;
         case OVER:
-            fprintf(listing, "/\n");
+            s += '/';
             break;
         case ENDFILE:
-            fprintf(listing, "EOF\n");
+            s += "EOF";
             break;
         case NUM:
-            fprintf(listing,
-                    "NUM, val= %s\n", tokenString);
+            s += "NUM, val= " + tokenString;
             break;
         case ID:
-            fprintf(listing,
-                    "ID, name= %s\n", tokenString);
+            s += "ID, name= " + tokenString;
             break;
         case ERROR:
-            fprintf(listing,
-                    "ERROR: %s\n", tokenString);
+            s += "ERROR: " + tokenString;
             break;
         default: /* should never happen */
-            fprintf(listing, "Unknown token: %d\n", token);
+            s += "Unknown token: " + to_string(token);
     }
+    s += "\n";
+    return s;
 }
 
 /* Function newStmtNode creates a new statement
@@ -92,7 +126,6 @@ TreeNode* newStmtNode(StmtKind kind)
         t->sibling = NULL;
         t->nodekind = StmtK;
         t->kind.stmt = kind;
-        t->lineno = lineno;
     }
     return t;
 }
@@ -113,8 +146,6 @@ TreeNode* newExpNode(ExpKind kind)
         t->sibling = NULL;
         t->nodekind = ExpK;
         t->kind.exp = kind;
-        t->lineno = lineno;
-        t->type = Void;
     }
     return t;
 }
@@ -134,82 +165,93 @@ char* copyString(char* s)
     if(t == NULL) {
         fprintf(listing, "Out of memory error at line %d\n", lineno);
     } else {
-        strcpy(t, s);
+        strcpy_s(t, n, s);
     }
     return t;
-}
-
-/* Variable indentno is used by printTree to
- * store current number of spaces to indent
- */
-static int indentno = 0;
-
-/* macros to increase/decrease indentation */
-#define INDENT indentno+=2
-#define UNINDENT indentno-=2
-
-/* printSpaces indents by printing spaces */
-static void printSpaces(void)
-{
-    int i;
-    for(i = 0; i < indentno; i++) {
-        fprintf(listing, " ");
-    }
 }
 
 /* procedure printTree prints a syntax tree to the
  * listing file using indentation to indicate subtrees
  */
-void printTree(TreeNode* tree)
+string printTree(TreeNode* tree, string s, int indentCount)
 {
-    int i;
-    INDENT;
     while(tree != NULL) {
-        printSpaces();
+        for(int i = 0; i < indentCount; i++) {
+            s += "  ";
+        }
         if(tree->nodekind == StmtK) {
             switch(tree->kind.stmt) {
                 case IfK:
-                    fprintf(listing, "If\n");
+                    s += "If";
                     break;
                 case RepeatK:
-                    fprintf(listing, "Repeat\n");
+                    s += "Repeat";
                     break;
-                case AssignK:
-                    fprintf(listing, "Assign to: %s\n", tree->attr.name);
+                case AssignK: {
+                    s += "Assign to: ";
+                    s += tree->attr.name;
                     break;
-                case ReadK:
-                    fprintf(listing, "Read: %s\n", tree->attr.name);
+                }
+                case ReadK: {
+                    s += "Read: ";
+                    s += tree->attr.name;
                     break;
+                }
                 case WriteK:
-                    fprintf(listing, "Write\n");
+                    s += "Write";
+                    break;
+                case DoWhileK:
+                    s += "Do";
+                    break;
+                case ForK:
+                    s += "For";
+                    break;
+                case DowntoK:
+                    s += "downto";
+                    break;
+                case ToK:
+                    s += "to";
+                    break;
+                case AndK:
+                    s += "And";
+                    break;
+                case OrK:
+                    s += "Or";
                     break;
                 default:
-                    fprintf(listing, "Unknown ExpNode kind\n");
+                    s += "Unknown ExpNode kind";
                     break;
             }
+            s += "\n";
         } else if(tree->nodekind == ExpK) {
             switch(tree->kind.exp) {
                 case OpK:
-                    fprintf(listing, "Op: ");
-                    printToken(tree->attr.op, "\0");
+                    s += "Op: ";
+                    s += printToken(tree->attr.op, "\0");
                     break;
                 case ConstK:
-                    fprintf(listing, "Const: %d\n", tree->attr.val);
+                    s += "Const: " + to_string(tree->attr.val) + "\n";
                     break;
                 case IdK:
-                    fprintf(listing, "Id: %s\n", tree->attr.name);
+                    s += "Id: ";
+                    s += tree->attr.name;
+                    s += "\n";
+                    break;
+                case LopK:
+                    s += "Lop: ";
+                    s += printToken(tree->attr.op, "\0");
                     break;
                 default:
-                    fprintf(listing, "Unknown ExpNode kind\n");
+                    s += "Unknown ExpNode kind\n";
                     break;
             }
         } else {
-            fprintf(listing, "Unknown node kind\n");
+            s += "Unknown node kind\n";
         }
-        for(i = 0; i < MAXCHILDREN; i++) {
-            printTree(tree->child[i]);
+        for(int i = 0; i < MAXCHILDREN; i++) {
+            s = printTree(tree->child[i], s, indentCount + 1);
         }
         tree = tree->sibling;
     }
-    UNINDENT;
+    return s;
 }

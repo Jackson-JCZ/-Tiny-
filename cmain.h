@@ -1,6 +1,8 @@
+#include <string>
+
 #ifndef CMAIN_H
 #define CMAIN_H
 
-int fun(char filename[120]);
+std::string fun(char*);
 
 #endif // CMAIN_H

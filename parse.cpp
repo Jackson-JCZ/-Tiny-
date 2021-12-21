@@ -17,18 +17,24 @@ static TreeNode* stmt_sequence(void);
 static TreeNode* statement(void);
 static TreeNode* if_stmt(void);
 static TreeNode* repeat_stmt(void);
+static TreeNode* doWhile_stmt(void);  // do while循环
+static TreeNode* for_stmt(void);  // for循环
+static TreeNode* to_stmt(void);  // to/downto
 static TreeNode* assign_stmt(void);
 static TreeNode* read_stmt(void);
 static TreeNode* write_stmt(void);
 static TreeNode* exp(void);
+static TreeNode* exp2(void);  // 实现逻辑表达式and, or
+static TreeNode* minunseq_exp(char*);  // -=运算
 static TreeNode* simple_exp(void);
 static TreeNode* term(void);
+static TreeNode* term2(void);  // 乘方运算
 static TreeNode* factor(void);
 
-static void syntaxError(char* message)
+static void syntaxError(string message)
 {
     fprintf(listing, "\n>>> ");
-    fprintf(listing, "Syntax error at line %d: %s", lineno, message);
+    fprintf(listing, "Syntax error at line %d: %s", lineno, message.c_str());
     Error = TRUE;
 }
 
@@ -48,7 +54,8 @@ TreeNode* stmt_sequence(void)
     TreeNode* t = statement();
     TreeNode* p = t;
     while((token != ENDFILE) && (token != END) &&
-          (token != ELSE) && (token != UNTIL)) {
+          (token != ELSE) && (token != UNTIL) &&
+          (token != WHILE) && (token != ENDDO)) {
         TreeNode* q;
         match(SEMI);
         q = statement();
@@ -64,9 +71,6 @@ TreeNode* stmt_sequence(void)
     return t;
 }
 
-
-//P394
-//lineno: 961
 TreeNode* statement(void)
 {
     TreeNode* t = NULL;
@@ -86,6 +90,12 @@ TreeNode* statement(void)
         case WRITE :
             t = write_stmt();
             break;
+        case DO:
+            t = doWhile_stmt();
+            break;
+        case FOR:
+            t = for_stmt();
+            break;
         default :
             syntaxError("unexpected token -> ");
             printToken(token, tokenString);
@@ -95,17 +105,16 @@ TreeNode* statement(void)
     return t;
 }
 
-
-//P394
-//lineno: 977
 TreeNode* if_stmt(void)
 {
     TreeNode* t = newStmtNode(IfK);
     match(IF);
+    match(LPAREN);
     if(t != NULL) {
-        t->child[0] = exp();
+        t->child[0] = exp2();
     }
-    match(THEN);
+    match(RPAREN);
+    //    match(THEN);
     if(t != NULL) {
         t->child[1] = stmt_sequence();
     }
@@ -119,8 +128,58 @@ TreeNode* if_stmt(void)
     return t;
 }
 
-//P394
-//lineno:991
+// 实现do while循环
+treeNode* doWhile_stmt(void)
+{
+    TreeNode* t = newStmtNode(DoWhileK);
+    match(DO);
+    if(t != NULL) {
+        t->child[0] = stmt_sequence();
+    }
+    match(SEMI);
+    match(WHILE);
+    match(LPAREN);
+    if(t != NULL) {
+        t->child[1] = exp2();
+    }
+    match(RPAREN);
+    return t;
+}
+
+// 实现for循环
+TreeNode* for_stmt(void)
+{
+    TreeNode* t = newStmtNode(ForK);
+    match(FOR);
+    if(t != NULL) {
+        t->child[0] = assign_stmt();
+    }
+    if(t != NULL) {
+        t->child[1] = to_stmt();
+    }
+    match(DO);
+    if(t != NULL) {
+        t->child[2] = stmt_sequence();
+    }
+    match(ENDDO);
+    return t;
+}
+TreeNode* to_stmt(void)
+{
+    TreeNode* t = NULL;
+    if(token == TO) {
+        t = newStmtNode(ToK);
+        match(TO);
+    } else if(token == DOWNTO) {
+        t = newStmtNode(DowntoK);
+        match(DOWNTO);
+    }
+    if(t != NULL) {
+        t->child[0] = simple_exp();
+    }
+    return t;
+}
+
 TreeNode* repeat_stmt(void)
 {
     TreeNode* t = newStmtNode(RepeatK);
@@ -130,7 +189,7 @@ TreeNode* repeat_stmt(void)
     }
     match(UNTIL);
     if(t != NULL) {
-        t->child[1] = exp();
+        t->child[1] = exp2();
     }
     return t;
 }
@@ -138,13 +197,25 @@ TreeNode* repeat_stmt(void)
 TreeNode* assign_stmt(void)
 {
     TreeNode* t = newStmtNode(AssignK);
+    char* varname = NULL;
     if((t != NULL) && (token == ID)) {
         t->attr.name = copyString(tokenString);
+        varname = t->attr.name;
     }
     match(ID);
-    match(ASSIGN);
-    if(t != NULL) {
-        t->child[0] = exp();
+    if(token == ASSIGN) {
+        match(ASSIGN);
+        if(t != NULL) {
+            t->child[0] = exp2();
+        }
+    } else if(token == MINUSEQ) {
+        match(MINUSEQ);
+        if(t != NULL) {
+            t->child[0] = minunseq_exp(varname);
+        }
+    }
+    if(token == SEMI) {
+        match(SEMI);
     }
     return t;
 }
@@ -165,15 +236,23 @@ TreeNode* write_stmt(void)
     TreeNode* t = newStmtNode(WriteK);
     match(WRITE);
     if(t != NULL) {
-        t->child[0] = exp();
+        t->child[0] = exp2();
     }
     return t;
 }
 
 TreeNode* exp(void)
 {
+    bool hasNot = false;
+    if(token == NOT) {
+        match(token);
+        hasNot = true;
+    }
+
     TreeNode* t = simple_exp();
-    if((token == LT) || (token == EQ)) {
+    if(token == LT || token == LTE
+       || token == GT || token == GTE
+       || token == EQ || token == NE) {
         TreeNode* p = newExpNode(OpK);
         if(p != NULL) {
             p->child[0] = t;
@@ -185,14 +264,80 @@ TreeNode* exp(void)
             t->child[1] = simple_exp();
         }
     }
+    // 实现not
+    if(hasNot) {
+        switch(t->attr.op) {
+            case LT:
+                t->attr.op = GTE;
+                break;
+            case LTE:
+                t->attr.op = GT;
+                break;
+            case GT:
+                t->attr.op = LTE;
+                break;
+            case GTE:
+                t->attr.op = LT;
+                break;
+            case EQ:
+                t->attr.op = NE;
+                break;
+            case NE:
+                t->attr.op = EQ;
+                break;
+            default:
+                break;
+        }
+    }
+    return t;
+}
+
+// 实现逻辑表达式and, or
+TreeNode* exp2(void)
+{
+    TreeNode* t = exp();
+    while(token == AND || token == OR) {
+        TreeNode* p = NULL;
+        if(token == AND) {
+            p = newStmtNode(AndK);
+        } else if(token == OR) {
+            p = newStmtNode(OrK);
+        }
+        match(token);
+        if(p != NULL) {
+            p->child[0] = t;
+            p->child[1] = exp();
+            t = p;
+        }
+    }
+    return t;
+}
+
+// 实现-=赋值号
+TreeNode* minunseq_exp(char* varname)
+{
+    TreeNode* t = newExpNode(OpK);
+    TreeNode* p = newExpNode(IdK);
+    if(t != NULL && p != NULL) {
+        p->attr.name = varname;
+        t->child[0] = p;
+        t->child[1] = simple_exp();
+        t->attr.op = MINUS;
+    }
     return t;
 }
 
 TreeNode* simple_exp(void)
 {
     TreeNode* t = term();
-    while((token == PLUS) || (token == MINUS)) {
-        TreeNode* p = newExpNode(OpK);
+    while(token == PLUS || token == MINUS
+          || token == LINK || token == LOR) { // 连接&和或|
+        TreeNode* p = NULL;
+        if(token == LINK || token == LOR) {
+            p = newExpNode(LopK);
+        } else {
+            p = newExpNode(OpK);
+        }
         if(p != NULL) {
             p->child[0] = t;
             p->attr.op = token;
@@ -206,8 +351,34 @@ TreeNode* simple_exp(void)
 
 TreeNode* term(void)
 {
+    TreeNode* t = term2();
+    while(token == TIMES || token == OVER || token == MOD) {
+        TreeNode* p = newExpNode(OpK);
+        if(p != NULL) {
+            p->child[0] = t;
+            p->attr.op = token;
+            t = p;
+            match(token);
+            p->child[1] = term2();
+        }
+    }
+    while(token == CLOSURE) { // 闭包#
+        TreeNode* p = newExpNode(LopK);
+        if(p != NULL) {
+            p->child[0] = t;
+            p->attr.op = token;
+            t = p;
+            match(token);
+        }
+    }
+    return t;
+}
+
+// 乘方运算，优先级最高
+TreeNode* term2(void)
+{
     TreeNode* t = factor();
-    while((token == TIMES) || (token == OVER)) {
+    while(token == POWER) {
         TreeNode* p = newExpNode(OpK);
         if(p != NULL) {
             p->child[0] = t;
@@ -240,7 +411,7 @@ TreeNode* factor(void)
             break;
         case LPAREN :
             match(LPAREN);
-            t = exp();
+            t = exp2();
             match(RPAREN);
             break;
         default:

@@ -11,7 +11,7 @@
 
 /* states in scanner DFA */
 typedef enum
-{ START, INASSIGN, INCOMMENT, INNUM, INID, DONE }
+{ START, INASSIGN, INCOMMENT, INNUM, INID, INMINUS, INLT, INGT, DONE }
 StateType;
 
 /* lexeme of identifier or reserved word */
@@ -22,9 +22,9 @@ char tokenString[MAXTOKENLEN + 1];
 #define BUFLEN 256
 
 static char lineBuf[BUFLEN]; /* holds the current line */
-static int linepos = 0; /* current position in LineBuf */
-static int bufsize = 0; /* current size of buffer string */
-static int EOF_flag = FALSE; /* corrects ungetNextChar behavior on EOF */
+int linepos = 0; /* current position in LineBuf */
+int bufsize = 0; /* current size of buffer string */
+int EOF_flag = FALSE; /* corrects ungetNextChar behavior on EOF */
 
 /* getNextChar fetches the next non-blank character
    from lineBuf, reading in a new line if lineBuf is
@@ -34,9 +34,6 @@ static int getNextChar(void)
     if(!(linepos < bufsize)) {
         lineno++;
         if(fgets(lineBuf, BUFLEN - 1, source)) {
-            if(EchoSource) {
-                fprintf(listing, "%4d: %s", lineno, lineBuf);
-            }
             bufsize = strlen(lineBuf);
             linepos = 0;
             return lineBuf[linepos++];
@@ -60,21 +57,23 @@ static void ungetNextChar(void)
 
 /* lookup table of reserved words */
 static struct {
-    char* str;
+    string str;
     TokenType tok;
 } reservedWords[MAXRESERVED]
 = {{"if", IF}, {"then", THEN}, {"else", ELSE}, {"end", END},
     {"repeat", REPEAT}, {"until", UNTIL}, {"read", READ},
-    {"write", WRITE}
+    {"write", WRITE}, {"do", DO}, {"while", WHILE},
+    {"for", FOR}, {"to", TO}, {"downto", DOWNTO}, {"enddo", ENDDO},
+    {"and", AND}, {"or", OR}, {"not", NOT}
 };
 
 /* lookup an identifier to see if it is a reserved word */
 /* uses linear search */
-static TokenType reservedLookup(char* s)
+static TokenType reservedLookup(string s)
 {
-    int i;
-    for(i = 0; i < MAXRESERVED; i++)
-        if(!strcmp(s, reservedWords[i].str)) {
+    for(int i = 0; i < MAXRESERVED; i++)
+        //        if(!strcmp(s, reservedWords[i].str)) {
+        if(s == reservedWords[i].str) {
             return reservedWords[i].tok;
         }
     return ID;
@@ -105,13 +104,25 @@ TokenType getToken(void)
                     state = INNUM;
                 } else if(isalpha(c)) {
                     state = INID;
-                } else if(c == ':') {
+                } else if(c == '=') {
                     state = INASSIGN;
+                } else if(c == ':') {
+                    /* backup in the input */
+                    state = DONE;
+                    ungetNextChar();
+                    save = FALSE;
+                    currentToken = ERROR;
                 } else if((c == ' ') || (c == '\t') || (c == '\n')) {
                     save = FALSE;
                 } else if(c == '{') {
                     save = FALSE;
                     state = INCOMMENT;
+                } else if(c == '-') { // -、-=
+                    state = INMINUS;
+                } else if(c == '<') {
+                    state = INLT;  // 小于、小于等于、不等于
+                } else if(c == '>') {
+                    state = INGT;  // 大于、大于等于
                 } else {
                     state = DONE;
                     switch(c) {
@@ -119,23 +130,20 @@ TokenType getToken(void)
                             save = FALSE;
                             currentToken = ENDFILE;
                             break;
-                        case '=':
-                            currentToken = EQ;
-                            break;
-                        case '<':
-                            currentToken = LT;
-                            break;
                         case '+':
                             currentToken = PLUS;
-                            break;
-                        case '-':
-                            currentToken = MINUS;
                             break;
                         case '*':
                             currentToken = TIMES;
                             break;
                         case '/':
                             currentToken = OVER;
+                            break;
+                        case '%':
+                            currentToken = MOD;
+                            break;
+                        case '^':
+                            currentToken = POWER;
                             break;
                         case '(':
                             currentToken = LPAREN;
@@ -146,10 +154,51 @@ TokenType getToken(void)
                         case ';':
                             currentToken = SEMI;
                             break;
+                        case '#':
+                            currentToken = CLOSURE;
+                            break;
+                        case '|':
+                            currentToken = LOR;
+                            break;
+                        case '&':
+                            currentToken = LINK;
+                            break;
                         default:
                             currentToken = ERROR;
                             break;
                     }
+                }
+                break;
+            case INMINUS: // -或-=
+                state = DONE;
+                if(c == '=') {
+                    currentToken = MINUSEQ;
+                } else {
+                    tokenStringIndex--;
+                    linepos--;
+                    currentToken = MINUS;
+                }
+                break;
+            case INLT:  // 小于、小于等于、不等于
+                state = DONE;
+                if(c == '=') {
+                    currentToken = LTE;
+                } else if(c == '>') {
+                    currentToken = NE;
+                } else {
+                    tokenStringIndex--;
+                    linepos--;
+                    currentToken = LT;
+                }
+                break;
+            case INGT:  // 大于、大于等于
+                state = DONE;
+                if(c == '=') {
+                    currentToken = GTE;
+                } else {
+                    tokenStringIndex--;
+                    linepos--;
+                    currentToken = GT;
                 }
                 break;
             case INCOMMENT:
@@ -161,15 +210,14 @@ TokenType getToken(void)
                     state = START;
                 }
                 break;
-            case INASSIGN:
+            case INASSIGN:  // =或==
                 state = DONE;
                 if(c == '=') {
-                    currentToken = ASSIGN;
+                    currentToken = EQ;
                 } else {
-                    /* backup in the input */
-                    ungetNextChar();
-                    save = FALSE;
-                    currentToken = ERROR;
+                    tokenStringIndex--;
+                    linepos--;
+                    currentToken = ASSIGN;
                 }
                 break;
             case INNUM:
@@ -206,10 +254,6 @@ TokenType getToken(void)
                 currentToken = reservedLookup(tokenString);
             }
         }
-    }
-    if(TraceScan) {
-        fprintf(listing, "\t%d: ", lineno);
-        printToken(currentToken, tokenString);
     }
     return currentToken;
 } /* end getToken */
